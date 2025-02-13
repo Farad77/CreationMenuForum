@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Gestionnaire d'Ateliers</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        input[type="number"] {
+            width: 60px;
+            padding: 5px;
+            margin-right: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #ateliersList {
+            margin: 20px 0;
+        }
+        .atelier-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+            padding: 5px;
+            background-color: #f9f9f9;
+        }
+        .atelier-item button {
+            margin-left: 10px;
+            background-color: #ff4444;
+            padding: 5px 10px;
+        }
+        .menu {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #e8f5e9;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gestionnaire d'Ateliers</h1>
+        
+        <div class="input-group">
+            <label>Atelier n°<span id="atelierNumber">1</span>:</label>
+            <input type="text" id="nomAtelier" placeholder="Nom de l'atelier" style="width: 200px; margin-right: 10px;">
+            <select id="typeAtelier" style="margin-right: 10px;">
+                <option value="">-- Sélectionner un type --</option>
+                <option value="Metier manuel">Métier manuel</option>
+                <option value="Tertiaire">Tertiaire</option>
+                <option value="Formation">Formation</option>
+            </select>
+            <input type="number" id="attractivite" min="1" max="10" placeholder="1-10">
+            <button onclick="ajouterAtelier()">Ajouter</button>
+        </div>
+
+        <div id="ateliersList"></div>
+
+        <button onclick="genererMenus()" id="genererBtn" disabled>Générer les menus</button>
+
+        <div id="menusList"></div>
+    </div>
+
+    <script>
+        let ateliers = [];
+
+        function ajouterAtelier() {
+            const attractivite = parseInt(document.getElementById('attractivite').value);
+            if (isNaN(attractivite) || attractivite < 1 || attractivite > 10) {
+                alert('Veuillez entrer une note d\'attractivité entre 1 et 10');
+                return;
+            }
+
+            const nom = document.getElementById('nomAtelier').value.trim();
+            if (!nom) {
+                alert('Veuillez entrer un nom pour l\'atelier');
+                return;
+            }
+
+            const type = document.getElementById('typeAtelier').value;
+            if (!type) {
+                alert('Veuillez sélectionner un type d\'atelier');
+                return;
+            }
+
+            const atelier = {
+                id: ateliers.length + 1,
+                nom: nom,
+                type: type,
+                attractivite: attractivite
+            };
+
+            ateliers.push(atelier);
+            afficherAteliers();
+            document.getElementById('attractivite').value = '';
+            document.getElementById('nomAtelier').value = '';
+            document.getElementById('typeAtelier').value = '';
+            document.getElementById('atelierNumber').textContent = ateliers.length + 1;
+
+            // Activer le bouton de génération si on a au moins 5 ateliers
+            document.getElementById('genererBtn').disabled = ateliers.length < 5;
+        }
+
+        function supprimerAtelier(id) {
+            ateliers = ateliers.filter(a => a.id !== id);
+            afficherAteliers();
+            document.getElementById('atelierNumber').textContent = ateliers.length + 1;
+            document.getElementById('genererBtn').disabled = ateliers.length < 5;
+        }
+
+        function afficherAteliers() {
+            const list = document.getElementById('ateliersList');
+            list.innerHTML = '<h3>Ateliers ajoutés:</h3>';
+            ateliers.forEach(atelier => {
+                const div = document.createElement('div');
+                div.className = 'atelier-item';
+                div.innerHTML = `
+                    Atelier ${atelier.id} - ${atelier.nom} - Type: ${atelier.type} - Attractivité: ${atelier.attractivite}
+                    <button onclick="supprimerAtelier(${atelier.id})">Supprimer</button>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function calculerPoidsTotal(menu) {
+            return menu.reduce((sum, atelier) => sum + atelier.attractivite, 0);
+        }
+
+        function verifierDiversiteTypes(menu) {
+            const types = new Set(menu.map(a => a.type));
+            return types.size >= 3; // Idéalement, on veut les 3 types
+        }
+
+        function evaluerMenu(menu, poidsMoyenIdeal) {
+            const diversite = verifierDiversiteTypes(menu) ? 1 : 0;
+            const ecartPoids = Math.abs(calculerPoidsTotal(menu) - poidsMoyenIdeal);
+            // La diversité des types est prioritaire sur l'équilibre des poids
+            return diversite * 1000 - ecartPoids;
+        }
+
+        function genererMenus() {
+            if (ateliers.length < 5) {
+                alert('Il faut au moins 5 ateliers pour générer des menus');
+                return;
+            }
+
+            const menus = [];
+            const nombreMenus = Math.floor(ateliers.length / 5);
+
+            // Générer toutes les combinaisons possibles de 5 ateliers
+            const combinations = [];
+            function generateCombinations(start, current) {
+                if (current.length === 5) {
+                    combinations.push([...current]);
+                    return;
+                }
+                for (let i = start; i < ateliers.length; i++) {
+                    current.push(ateliers[i]);
+                    generateCombinations(i + 1, current);
+                    current.pop();
+                }
+            }
+            generateCombinations(0, []);
+
+            // Calculer le poids moyen idéal
+            const poidsTotal = ateliers.reduce((sum, a) => sum + a.attractivite, 0);
+            const poidsMoyenIdeal = poidsTotal / nombreMenus;
+
+            // Trier les combinaisons en priorisant la diversité des types
+            combinations.sort((a, b) => {
+                const scoreA = evaluerMenu(a, poidsMoyenIdeal);
+                const scoreB = evaluerMenu(b, poidsMoyenIdeal);
+                return scoreB - scoreA;
+            });
+
+            // Sélectionner les meilleures combinaisons qui n'utilisent pas les mêmes ateliers
+            const ateliersUtilises = new Set();
+            for (const combo of combinations) {
+                if (menus.length >= nombreMenus) break;
+                
+                const ateliersCombo = new Set(combo.map(a => a.id));
+                const intersection = [...ateliersCombo].filter(x => ateliersUtilises.has(x));
+                
+                if (intersection.length === 0) {
+                    menus.push(combo);
+                    ateliersCombo.forEach(id => ateliersUtilises.add(id));
+                }
+            }
+
+            // Afficher les menus générés
+            const menusList = document.getElementById('menusList');
+            menusList.innerHTML = '<h3>Menus générés:</h3>';
+            menus.forEach((menu, index) => {
+                const poidsTotal = calculerPoidsTotal(menu);
+                const types = new Set(menu.map(a => a.type));
+                const div = document.createElement('div');
+                div.className = 'menu';
+                div.innerHTML = `
+                    <strong>Menu ${index + 1}</strong> (Poids total: ${poidsTotal}, Nombre de types différents: ${types.size})<br>
+                    ${menu.map(a => `Atelier ${a.id} - ${a.nom} - ${a.type} (${a.attractivite})`).join('<br>')}
+                `;
+                menusList.appendChild(div);
+            });
+        }
+    </script>
+</body>
+</html>
