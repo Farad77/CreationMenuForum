@@ -333,33 +333,115 @@
         }
 
         function afficherPlanningAteliers(programme, creneauDepart) {
-            const planning = genererPlanningAteliers(programme, creneauDepart);
             return `
-                <div style="background-color: white; padding: 15px; border-radius: 4px; margin-top: 10px;">
-                    <h4>Planning des ateliers</h4>
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <tr>
-                            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Horaire</th>
-                            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Atelier</th>
-                        </tr>
-                        ${planning.map(p => `
-                            <tr>
-                                <td style="border: 1px solid #ddd; padding: 8px;">${p.horaire}</td>
-                                <td style="border: 1px solid #ddd; padding: 8px;">${p.atelier}</td>
-                            </tr>
-                        `).join('')}
-                    </table>
+                <div id="planning-${programme.replace(/\s+/g, '-')}-${creneauDepart.replace(/:/g, '-')}" class="planning-container">
                 </div>
             `;
         }
 
         function togglePlanning(button, programme, creneauHoraire) {
+            console.log('Fonction appelée avec:', { programme, creneauHoraire });
+            
             const planningContainer = button.nextElementSibling;
-            if (!planningContainer.innerHTML) {
-                planningContainer.innerHTML = afficherPlanningAteliers(programme, creneauHoraire);
+            console.log('Container trouvé:', planningContainer);
+
+            if (planningContainer) {
+                const ateliers = window.programmesAteliers[programme];
+                if (!ateliers) {
+                    console.error('Programme non trouvé:', programme);
+                    return;
+                }
+
+                if (!planningContainer.innerHTML.trim()) {
+                    console.log('Ajout du planning');
+                    const planning = genererPlanningAteliers(programme, creneauHoraire);
+                    const planningId = `planning-${programme.replace(/\s+/g, '-')}-${creneauHoraire.replace(/:/g, '-')}`;
+                    
+                    planningContainer.innerHTML = `
+                        <div class="planning-grid" id="${planningId}">
+                            <button class="export-pdf-btn" onclick="exportToPDF('${planningId}')">
+                                Exporter en PDF
+                            </button>
+                            <h4>Planning des ateliers - ${programme}</h4>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Horaire</th>
+                                        <th>Atelier</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${planning.map(p => `
+                                        <tr>
+                                            <td>${p.horaire}</td>
+                                            <td>${p.atelier}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                            <div style="font-size: 0.9em; color: #666; text-align: center; margin-top: 10px;">
+                                Groupe du créneau ${creneauHoraire}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                const isHidden = planningContainer.style.display === 'none' || !planningContainer.style.display;
+                planningContainer.style.display = isHidden ? 'block' : 'none';
+                button.textContent = isHidden ? 'Masquer le planning' : 'Voir le planning';
             }
-            planningContainer.style.display = planningContainer.style.display === 'none' ? 'block' : 'none';
-            button.textContent = planningContainer.style.display === 'none' ? 'Voir le planning' : 'Masquer le planning';
+        }
+
+        async function exportToPDF(planningId) {
+            try {
+                const element = document.getElementById(planningId);
+                if (!element) {
+                    throw new Error('Element non trouvé: ' + planningId);
+                }
+
+                // Masquer le bouton d'export
+                const exportBtn = element.querySelector('.export-pdf-btn');
+                if (exportBtn) exportBtn.style.display = 'none';
+
+                try {
+                    // Convertir en canvas
+                    const canvas = await window.html2canvas(element, {
+                        scale: 2,
+                        logging: true,
+                        useCORS: true
+                    });
+
+                    // Créer le PDF
+                    const pdf = new window.jspdf.jsPDF({
+                        unit: 'mm',
+                        format: 'a4',
+                        orientation: 'portrait'
+                    });
+
+                    // Dimensions du PDF A4 en mm
+                    const pdfWidth = 210;
+                    const pdfHeight = 297;
+
+                    // Calculer les dimensions de l'image pour qu'elle tienne sur la page
+                    const imgWidth = pdfWidth;
+                    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+                    // Ajouter l'image
+                    const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                    pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, Math.min(imgHeight, pdfHeight));
+
+                    // Sauvegarder
+                    pdf.save(`planning-${planningId}.pdf`);
+
+                    console.log('PDF généré avec succès');
+                } finally {
+                    // Toujours remettre le bouton
+                    if (exportBtn) exportBtn.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Erreur lors de la génération du PDF:', error);
+                alert('Erreur lors de la génération du PDF. Veuillez réessayer.');
+            }
         }
 
         function toggleCreneau(header) {
@@ -387,32 +469,49 @@
                 }))
             }));
 
+            // Trier les élèves par priorité
             let elevesATraiter = [...window.eleves];
+            let elevesPrioritaires3 = elevesATraiter.filter(e => e.Classe.startsWith('3'));
+            let elevesPrioritaires4 = elevesATraiter.filter(e => e.Classe.startsWith('4'));
+            let elevesNonPrioritaires = elevesATraiter.filter(e => 
+                !e.Classe.startsWith('3') && !e.Classe.startsWith('4'));
 
-            // Attribution selon les voeux
-            for (let voeuNum = 1; voeuNum <= 3; voeuNum++) {
-                const voeuKey = `Voeux${voeuNum}`;
-                
-                programmes.forEach(programme => {
-                    const groupeProg = groupes.find(g => g.programme === programme);
+            // Fonction pour placer un groupe d'élèves selon leurs vœux
+            function placerEleves(eleves) {
+                let elevesRestants = [...eleves];
+
+                // Attribution selon les voeux
+                for (let voeuNum = 1; voeuNum <= 3; voeuNum++) {
+                    const voeuKey = `Voeux${voeuNum}`;
                     
-                    groupeProg.creneaux.forEach(creneau => {
-                        while (creneau.eleves.length < TAILLE_GROUPE) {
-                            const candidats = elevesATraiter.filter(e => e[voeuKey] === programme);
-                            if (candidats.length === 0) break;
+                    programmes.forEach(programme => {
+                        const groupeProg = groupes.find(g => g.programme === programme);
+                        
+                        groupeProg.creneaux.forEach(creneau => {
+                            while (creneau.eleves.length < TAILLE_GROUPE) {
+                                const candidats = elevesRestants.filter(e => e[voeuKey] === programme);
+                                if (candidats.length === 0) break;
 
-                            const eleve = candidats[Math.floor(Math.random() * candidats.length)];
-                            eleve.voeuSatisfait = voeuNum;
-                            eleve.creneauHoraire = creneau.horaire;
-                            creneau.eleves.push(eleve);
-                            elevesATraiter = elevesATraiter.filter(e => e !== eleve);
-                        }
+                                const eleve = candidats[Math.floor(Math.random() * candidats.length)];
+                                eleve.voeuSatisfait = voeuNum;
+                                eleve.creneauHoraire = creneau.horaire;
+                                creneau.eleves.push(eleve);
+                                elevesRestants = elevesRestants.filter(e => e !== eleve);
+                            }
+                        });
                     });
-                });
+                }
+
+                return elevesRestants;
             }
 
+            // Placer les élèves dans l'ordre de priorité
+            let nonPlaces = placerEleves(elevesPrioritaires3);
+            nonPlaces = [...nonPlaces, ...placerEleves(elevesPrioritaires4)];
+            nonPlaces = [...nonPlaces, ...placerEleves(elevesNonPrioritaires)];
+
             // Placement des élèves restants
-            elevesATraiter.forEach(eleve => {
+            nonPlaces.forEach(eleve => {
                 // Chercher un créneau disponible dans n'importe quel programme
                 for (const groupe of groupes) {
                     const creneauDisponible = groupe.creneaux.find(c => c.eleves.length < TAILLE_GROUPE);

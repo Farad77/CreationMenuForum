@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Planning des Groupes</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .file-input-container {
+            margin-bottom: 20px;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .file-input-label {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .file-input {
+            display: none;
+        }
+        .file-name {
+            margin-top: 10px;
+            color: #666;
+        }
+        .group-selector {
+            margin: 20px 0;
+            padding: 10px;
+            width: 100%;
+            max-width: 300px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .time-slot {
+            border-bottom: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+        .time-header {
+            font-weight: bold;
+            width: 120px;
+            flex-shrink: 0;
+        }
+        .event {
+            padding: 10px 15px;
+            margin: 0 10px;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            flex-grow: 1;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+            color: #666;
+        }
+        /* Couleurs pour les programmes */
+        .programme-1 { background-color: #cce5ff; }
+        .programme-2 { background-color: #d4edda; }
+        .programme-3 { background-color: #fff3cd; }
+        .programme-4 { background-color: #f8d7da; }
+        .programme-5 { background-color: #e2e3e5; }
+        .programme-6 { background-color: #ffeeba; }
+        .programme-7 { background-color: #c3e6cb; }
+    </style>
+</head>
+<body>
+    <div class="file-input-container">
+        <label class="file-input-label">
+            Choisir un fichier Excel
+            <input type="file" class="file-input" accept=".xlsx,.xls" onchange="handleFileSelect(event)">
+        </label>
+        <div class="file-name" id="file-name">Aucun fichier sélectionné</div>
+    </div>
+
+    <div id="loading" class="loading">
+        Chargement du fichier en cours...
+    </div>
+
+    <select id="group-selector" class="group-selector" onchange="showGroupPlanning(this.value)">
+        <option value="">Sélectionnez un groupe</option>
+    </select>
+
+    <div id="planning"></div>
+
+    <script>
+        let globalData = null;
+
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                document.getElementById('file-name').textContent = file.name;
+                document.getElementById('loading').style.display = 'block';
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    processWorkbook(workbook);
+                    document.getElementById('loading').style.display = 'none';
+                };
+                reader.onerror = function(e) {
+                    console.error('Erreur lors de la lecture du fichier:', e);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('file-name').textContent = 'Erreur lors de la lecture du fichier';
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        }
+
+        function processWorkbook(workbook) {
+            const processedData = {};
+
+            // Traiter chaque programme
+            for (let p = 1; p <= 7; p++) {
+                const programSheet = workbook.Sheets[`Programme_${p}`];
+                if (programSheet) {
+                    const rawData = XLSX.utils.sheet_to_json(programSheet, {header: 1});
+                    processedData[`P${p}`] = processProgramData(rawData);
+                }
+            }
+
+            globalData = processedData;
+            populateGroupSelector();
+            
+            // Sélectionner automatiquement le premier groupe
+            const selector = document.getElementById('group-selector');
+            if (selector.options.length > 1) {
+                selector.selectedIndex = 1;
+                showGroupPlanning(selector.value);
+            }
+        }
+
+        function processProgramData(data) {
+            let activities = [];
+            let foundFirstSchedule = false;
+
+            data.forEach(row => {
+                if (!row || row.length === 0) return;
+
+                // On cherche le premier créneau qui contient le planning complet
+                if (row[0] && typeof row[0] === 'string' && row[0].startsWith('Créneau:') && !foundFirstSchedule) {
+                    activities = [];
+                    foundFirstSchedule = true;
+                }
+
+                // Si on a trouvé le premier créneau et qu'on a une activité
+                if (foundFirstSchedule && row[0] && row[1] && row[0].includes('h') && !row[0].includes('Horaire')) {
+                    activities.push({
+                        time: row[0],
+                        activity: row[1]
+                    });
+                }
+
+                // Si on trouve un nouveau créneau, on arrête de collecter les activités
+                if (foundFirstSchedule && row[0] && typeof row[0] === 'string' && row[0].startsWith('Créneau:') && activities.length > 0) {
+                    foundFirstSchedule = false;
+                }
+            });
+
+            return activities;
+        }
+
+        function populateGroupSelector() {
+            const selector = document.getElementById('group-selector');
+            selector.innerHTML = '<option value="">Sélectionnez un groupe</option>';
+
+            // Créer les groupes pour chaque programme
+            for (let p = 1; p <= 7; p++) {
+                const optgroup = document.createElement('optgroup');
+                optgroup.label = `Programme ${p}`;
+                
+                // 5 groupes par programme
+                for (let g = 1; g <= 5; g++) {
+                    const option = document.createElement('option');
+                    option.value = `P${p}-G${g}`;
+                    option.textContent = `Programme ${p} - Groupe ${g}`;
+                    optgroup.appendChild(option);
+                }
+                
+                selector.appendChild(optgroup);
+            }
+        }
+
+        function showGroupPlanning(groupId) {
+            if (!groupId) return;
+
+            const [program, group] = groupId.split('-');
+            const programData = globalData[program];
+            const groupNum = parseInt(group.substring(1));
+            
+            if (!programData) return;
+
+            const container = document.getElementById('planning');
+            container.innerHTML = '';
+
+            programData.forEach(activity => {
+                const timeSlot = document.createElement('div');
+                timeSlot.className = 'time-slot';
+                
+                const timeHeader = document.createElement('div');
+                timeHeader.className = 'time-header';
+                timeHeader.textContent = activity.time;
+                timeSlot.appendChild(timeHeader);
+
+                const event = document.createElement('div');
+                event.className = `event programme-${program.substring(1)}`;
+                event.textContent = activity.activity;
+                timeSlot.appendChild(event);
+
+                container.appendChild(timeSlot);
+            });
+        }
+    </script>
+</body>
+</html>
