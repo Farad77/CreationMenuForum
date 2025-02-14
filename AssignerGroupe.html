@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Générateur de Groupes - Voeux des élèves</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .title {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .input-section {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .file-input {
+            margin-bottom: 20px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .groups-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .group {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .group-header {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .creneau-section {
+            margin: 10px 0;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .creneau-header {
+            padding: 10px;
+            background-color: #e9ecef;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+        }
+        .creneau-header:hover {
+            background-color: #dee2e6;
+        }
+        .student-item {
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .student-item.voeu-1 {
+            background-color: #d4edda;
+        }
+        .student-item.voeu-2 {
+            background-color: #fff3cd;
+        }
+        .student-item.voeu-3 {
+            background-color: #f8d7da;
+        }
+        .student-item.non-satisfait {
+            background-color: #e9ecef;
+        }
+        .stats {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .stat-item {
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .export-btn {
+            background-color: #28a745;
+            margin-top: 20px;
+            display: none;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .creneau-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+            padding: 0 10px;
+        }
+        .creneau-content.open {
+            max-height: 1000px;
+            padding: 10px;
+        }
+        .creneau-arrow {
+            transition: transform 0.3s ease;
+        }
+        .creneau-arrow.open {
+            transform: rotate(180deg);
+        }
+        .planning-button {
+            background-color: #28a745;
+            margin: 10px 0;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">Générateur de Groupes - Voeux des élèves</h1>
+        
+        <div class="input-section">
+            <div class="file-input">
+                <label for="fileInput">Sélectionner le fichier CSV des voeux :</label>
+                <input type="file" id="fileInput" accept=".csv">
+            </div>
+            <div id="uploadStatus" class="status"></div>
+            <div class="button-group">
+                <button id="generateBtn" onclick="genererGroupes()" disabled>
+                    Générer les groupes
+                </button>
+                <button id="exportBtn" onclick="exporterGroupes()" class="export-btn">
+                    Exporter en XLSX
+                </button>
+            </div>
+        </div>
+
+        <div id="statsContainer" class="stats" style="display: none;">
+            <h2>Statistiques globales</h2>
+            <div id="statsGlobal" class="stats-grid"></div>
+        </div>
+
+        <div id="groupsContainer" class="groups-container"></div>
+    </div>
+
+    <script>
+        // Variables globales
+        window.eleves = [];
+        window.groupesGeneres = null;
+        window.programmesAteliers = {
+            'Programme 1': ['Pompier', 'Maintenance Auto', 'Médico social', 'Lycée Cluny', 'Bel Air Lycée Pro'],
+            'Programme 2': ['Police', 'Hotellerie', 'Personnel Navigant', 'LP Amiral Lacaze (Production)', 'Atelier Mystère'],
+            'Programme 3': ['Métier de l\'alimentation', 'LP Paul Moreau (Construction)', 'LP Rontaunay (Petite Enfance)', 'Ecole Maritime', 'Construction charpente/Métallique'],
+            'Programme 4': ['LP Rontaunay (Soins à la personne)', 'Bel Air Lycée Général', 'Armée de Terre', 'Hygienne Alimentaire', 'Atelier Mystère'],
+            'Programme 5': ['Marine Nationale', 'Agriculture', 'Production Industrielle', 'JeuxVideo - VR', 'Atelier Mystère'],
+            'Programme 6': ['Assistante Sociale', 'Mandataire immobilier', 'Métiers de la beauté', 'JeuxVideo -Ecole', 'Atelier Mystère'],
+            'Programme 7': ['Wedding Planner', 'Humoriste/Youtubeur', 'Professeur des écoles', 'Diéteticienne', 'Atelier Mystère'],
+            'Programme 8': ['Métiers du cinéma', 'Avocat', 'Conseiller à l\'emploi', 'Ingénieur Innovation Technologie', 'Cuisine']
+        };
+
+        const TAILLE_GROUPE = 15;
+        const CRENEAUX = [
+            "8h00-8h40",
+            "8h40-9h20",
+            "9h40-10h20",
+            "10h20-11h00",
+            "11h00-11h40"
+        ];
+
+        // Chargement du fichier CSV
+        document.getElementById('fileInput').addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            const statusDiv = document.getElementById('uploadStatus');
+            
+            if (!file) {
+                statusDiv.className = 'status error';
+                statusDiv.textContent = 'Aucun fichier sélectionné';
+                return;
+            }
+
+            Papa.parse(file, {
+                header: true,
+                delimiter: ";",
+                encoding: "CP1252",
+                skipEmptyLines: true,
+                complete: function(results) {
+                    if (results.errors.length > 0) {
+                        statusDiv.className = 'status error';
+                        statusDiv.textContent = 'Erreur lors de la lecture du fichier';
+                        document.getElementById('generateBtn').disabled = true;
+                        return;
+                    }
+
+                    // Filtrer et nettoyer les données
+                    window.eleves = results.data
+                        .filter(row => Object.keys(row).length > 1)
+                        .filter(eleve => 
+                            eleve.Nom && 
+                            eleve.Prenom && 
+                            eleve.Classe && 
+                            eleve.Voeux1 && 
+                            eleve.Voeux2 && 
+                            eleve.Voeux3
+                        );
+
+                    if (window.eleves.length > 0) {
+                        statusDiv.className = 'status success';
+                        statusDiv.textContent = `${window.eleves.length} élèves chargés avec succès`;
+                        document.getElementById('generateBtn').disabled = false;
+                    } else {
+                        statusDiv.className = 'status error';
+                        statusDiv.textContent = 'Aucun élève valide trouvé dans le fichier';
+                        document.getElementById('generateBtn').disabled = true;
+                    }
+                },
+                error: function(error) {
+                    statusDiv.className = 'status error';
+                    statusDiv.textContent = 'Erreur lors de la lecture du fichier : ' + error.message;
+                    document.getElementById('generateBtn').disabled = true;
+                }
+            });
+        });
+
+        // Chargement des ateliers
+        async function chargerAteliers() {
+            try {
+                const fileContent = await window.fs.readFile('programmes 8.csv', { encoding: 'utf8' });
+                const results = Papa.parse(fileContent, {
+                    delimiter: ";",
+                    encoding: "CP1252",
+                    skipEmptyLines: 'greedy'
+                });
+
+                const programmes = {};
+                let programmeCourant = null;
+                let ateliersCourants = [];
+
+                results.data.forEach(row => {
+                    if (row[0].startsWith('Programme ')) {
+                        if (programmeCourant && ateliersCourants.length > 0) {
+                            programmes[programmeCourant] = ateliersCourants;
+                        }
+                        programmeCourant = row[0];
+                        ateliersCourants = [];
+                    } else if (row[2] && row[2] !== "Nom de l'atelier" && programmeCourant) {
+                        ateliersCourants.push(row[2].trim());
+                    }
+                });
+                
+                if (programmeCourant && ateliersCourants.length > 0) {
+                    programmes[programmeCourant] = ateliersCourants;
+                }
+
+                window.programmesAteliers = programmes;
+                console.log("Ateliers chargés:", window.programmesAteliers);
+            } catch (error) {
+                console.error("Erreur lors du chargement des ateliers:", error);
+            }
+        }
+
+        // Génération des plannings
+        function genererPlanningAteliers(programme, creneauDepart) {
+            const ateliers = window.programmesAteliers[programme];
+            if (!ateliers) {
+                console.error("Programme non trouvé:", programme);
+                return [];
+            }
+
+            const indexDepart = CRENEAUX.indexOf(creneauDepart);
+            let planning = [];
+            
+            for (let i = 0; i < CRENEAUX.length; i++) {
+                const indexAtelier = (i + indexDepart) % 5;
+                planning.push({
+                    horaire: CRENEAUX[i],
+                    atelier: ateliers[indexAtelier]
+                });
+            }
+            
+            return planning;
+        }
+
+        function afficherPlanningAteliers(programme, creneauDepart) {
+            const planning = genererPlanningAteliers(programme, creneauDepart);
+            return `
+                <div style="background-color: white; padding: 15px; border-radius: 4px; margin-top: 10px;">
+                    <h4>Planning des ateliers</h4>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Horaire</th>
+                            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Atelier</th>
+                        </tr>
+                        ${planning.map(p => `
+                            <tr>
+                                <td style="border: 1px solid #ddd; padding: 8px;">${p.horaire}</td>
+                                <td style="border: 1px solid #ddd; padding: 8px;">${p.atelier}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                </div>
+            `;
+        }
+
+        function togglePlanning(button, programme, creneauHoraire) {
+            const planningContainer = button.nextElementSibling;
+            if (!planningContainer.innerHTML) {
+                planningContainer.innerHTML = afficherPlanningAteliers(programme, creneauHoraire);
+            }
+            planningContainer.style.display = planningContainer.style.display === 'none' ? 'block' : 'none';
+            button.textContent = planningContainer.style.display === 'none' ? 'Voir le planning' : 'Masquer le planning';
+        }
+
+        function toggleCreneau(header) {
+            const content = header.nextElementSibling;
+            const arrow = header.querySelector('.creneau-arrow');
+            content.classList.toggle('open');
+            arrow.classList.toggle('open');
+        }
+
+        function genererGroupes() {
+            if (!window.eleves || window.eleves.length === 0) {
+                alert('Veuillez d\'abord charger un fichier de données');
+                return;
+            }
+
+            // Initialisation des groupes avec créneaux
+            const programmes = ['Programme 1', 'Programme 2', 'Programme 3', 'Programme 4', 
+                              'Programme 5', 'Programme 6', 'Programme 7', 'Programme 8'];
+            
+            let groupes = programmes.map(p => ({
+                programme: p,
+                creneaux: CRENEAUX.map(creneau => ({
+                    horaire: creneau,
+                    eleves: []
+                }))
+            }));
+
+            let elevesATraiter = [...window.eleves];
+
+            // Attribution selon les voeux
+            for (let voeuNum = 1; voeuNum <= 3; voeuNum++) {
+                const voeuKey = `Voeux${voeuNum}`;
+                
+                programmes.forEach(programme => {
+                    const groupeProg = groupes.find(g => g.programme === programme);
+                    
+                    groupeProg.creneaux.forEach(creneau => {
+                        while (creneau.eleves.length < TAILLE_GROUPE) {
+                            const candidats = elevesATraiter.filter(e => e[voeuKey] === programme);
+                            if (candidats.length === 0) break;
+
+                            const eleve = candidats[Math.floor(Math.random() * candidats.length)];
+                            eleve.voeuSatisfait = voeuNum;
+                            eleve.creneauHoraire = creneau.horaire;
+                            creneau.eleves.push(eleve);
+                            elevesATraiter = elevesATraiter.filter(e => e !== eleve);
+                        }
+                    });
+                });
+            }
+
+            // Placement des élèves restants
+            elevesATraiter.forEach(eleve => {
+                // Chercher un créneau disponible dans n'importe quel programme
+                for (const groupe of groupes) {
+                    const creneauDisponible = groupe.creneaux.find(c => c.eleves.length < TAILLE_GROUPE);
+                    if (creneauDisponible) {
+                        eleve.voeuSatisfait = 0;
+                        eleve.creneauHoraire = creneauDisponible.horaire;
+                        creneauDisponible.eleves.push(eleve);
+                        break;
+                    }
+                }
+            });
+
+            // Affichage des résultats
+            afficherResultats(groupes);
+        }
+
+        function afficherResultats(groupes) {
+            window.groupesGeneres = groupes;
+            document.getElementById('exportBtn').style.display = 'block';
+
+            // Statistiques globales
+            const stats = {
+                total: window.eleves.length,
+                voeu1: window.eleves.filter(e => e.voeuSatisfait === 1).length,
+                voeu2: window.eleves.filter(e => e.voeuSatisfait === 2).length,
+                voeu3: window.eleves.filter(e => e.voeuSatisfait === 3).length,
+                nonSatisfait: window.eleves.filter(e => e.voeuSatisfait === 0).length
+            };
+
+            // Affichage des stats globales
+            document.getElementById('statsContainer').style.display = 'block';
+            document.getElementById('statsGlobal').innerHTML = `
+                <div class="stat-item">
+                    <h3>Vœu 1</h3>
+                    <p>${stats.voeu1} élèves</p>
+                    <p>(${((stats.voeu1/stats.total)*100).toFixed(1)}%)</p>
+                </div>
+                <div class="stat-item">
+                    <h3>Vœu 2</h3>
+                    <p>${stats.voeu2} élèves</p>
+                    <p>(${((stats.voeu2/stats.total)*100).toFixed(1)}%)</p>
+                </div>
+                <div class="stat-item">
+                    <h3>Vœu 3</h3>
+                    <p>${stats.voeu3} élèves</p>
+                    <p>(${((stats.voeu3/stats.total)*100).toFixed(1)}%)</p>
+                </div>
+                <div class="stat-item">
+                    <h3>Non satisfait</h3>
+                    <p>${stats.nonSatisfait} élèves</p>
+                    <p>(${((stats.nonSatisfait/stats.total)*100).toFixed(1)}%)</p>
+                </div>
+            `;
+
+            // Affichage des groupes
+            const container = document.getElementById('groupsContainer');
+            container.innerHTML = '';
+
+            groupes.forEach(groupe => {
+                const div = document.createElement('div');
+                div.className = 'group';
+                
+                // En-tête du programme
+                const nombreTotalEleves = groupe.creneaux.reduce((total, creneau) => 
+                    total + creneau.eleves.length, 0);
+                
+                div.innerHTML = `
+                    <div class="group-header">
+                        <h3>${groupe.programme} (${nombreTotalEleves} élèves au total)</h3>
+                    </div>
+                `;
+
+                // Affichage par créneau
+                groupe.creneaux.forEach(creneau => {
+                    const creneauStats = {
+                        voeu1: creneau.eleves.filter(e => e.voeuSatisfait === 1).length,
+                        voeu2: creneau.eleves.filter(e => e.voeuSatisfait === 2).length,
+                        voeu3: creneau.eleves.filter(e => e.voeuSatisfait === 3).length,
+                        nonSatisfait: creneau.eleves.filter(e => e.voeuSatisfait === 0).length
+                    };
+
+                    const creneauDiv = document.createElement('div');
+                    creneauDiv.className = 'creneau-section';
+                    creneauDiv.innerHTML = `
+                        <div class="creneau-header" onclick="toggleCreneau(this)">
+                            <h4>Créneau ${creneau.horaire} (${creneau.eleves.length} élèves)</h4>
+                            <div style="display: flex; align-items: center;">
+                                <div style="margin-right: 20px;">
+                                    Vœu 1: ${creneauStats.voeu1} | 
+                                    Vœu 2: ${creneauStats.voeu2} | 
+                                    Vœu 3: ${creneauStats.voeu3}
+                                    ${creneauStats.nonSatisfait > 0 ? ` | Non satisfait: ${creneauStats.nonSatisfait}` : ''}
+                                </div>
+                                <span class="creneau-arrow">▼</span>
+                            </div>
+                        </div>
+                        <div class="creneau-content">
+                            <button class="planning-button" onclick="togglePlanning(this, '${groupe.programme}', '${creneau.horaire}')">
+                                Voir le planning
+                            </button>
+                            <div style="display: none;"></div>
+                            ${creneau.eleves.map(eleve => `
+                                <div class="student-item ${eleve.voeuSatisfait ? 'voeu-' + eleve.voeuSatisfait : 'non-satisfait'}">
+                                    <span>${eleve.Prenom} ${eleve.Nom} (${eleve.Classe})</span>
+                                    <span class="voeu-indicator">${
+                                        eleve.voeuSatisfait ? `Vœu ${eleve.voeuSatisfait}` : 'Non satisfait'
+                                    }</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                    div.appendChild(creneauDiv);
+                });
+
+                container.appendChild(div);
+            });
+        }
+
+        function exporterGroupes() {
+            if (!window.groupesGeneres) {
+                alert('Veuillez d\'abord générer les groupes');
+                return;
+            }
+
+            const wb = XLSX.utils.book_new();
+
+            // Page de résumé global
+            const resumeData = [
+                ['Statistiques Globales'],
+                [],
+                ['Type de vœu', 'Nombre d\'élèves', 'Pourcentage'],
+                ['Vœu 1', 
+                 window.eleves.filter(e => e.voeuSatisfait === 1).length,
+                 ((window.eleves.filter(e => e.voeuSatisfait === 1).length / window.eleves.length * 100).toFixed(1) + '%')],
+                ['Vœu 2', 
+                 window.eleves.filter(e => e.voeuSatisfait === 2).length,
+                 ((window.eleves.filter(e => e.voeuSatisfait === 2).length / window.eleves.length * 100).toFixed(1) + '%')],
+                ['Vœu 3', 
+                 window.eleves.filter(e => e.voeuSatisfait === 3).length,
+                 ((window.eleves.filter(e => e.voeuSatisfait === 3).length / window.eleves.length * 100).toFixed(1) + '%')],
+                ['Non satisfait', 
+                 window.eleves.filter(e => e.voeuSatisfait === 0).length,
+                 ((window.eleves.filter(e => e.voeuSatisfait === 0).length / window.eleves.length * 100).toFixed(1) + '%')],
+                ['Total', window.eleves.length, '100%']
+            ];
+
+            const wsResume = XLSX.utils.aoa_to_sheet(resumeData);
+            XLSX.utils.book_append_sheet(wb, wsResume, "Résumé");
+
+            // Une page par programme
+            window.groupesGeneres.forEach(groupe => {
+                const programData = [
+                    [groupe.programme],
+                    []
+                ];
+
+                // Ajouter les données pour chaque créneau
+                groupe.creneaux.forEach(creneau => {
+                    // Générer le planning pour ce créneau
+                    const planning = genererPlanningAteliers(groupe.programme, creneau.horaire);
+                    
+                    programData.push(
+                        [`Créneau: ${creneau.horaire}`],
+                        ['Planning des ateliers'],
+                        ['Horaire', 'Atelier'],
+                        ...planning.map(p => [p.horaire, p.atelier]),
+                        [],
+                        ['Liste des élèves'],
+                        ['Nom', 'Prénom', 'Classe', 'Vœu satisfait'],
+                        ...creneau.eleves.map(eleve => [
+                            eleve.Nom,
+                            eleve.Prenom,
+                            eleve.Classe,
+                            eleve.voeuSatisfait ? `Vœu ${eleve.voeuSatisfait}` : 'Non satisfait'
+                        ]),
+                        [] // Ligne vide entre les créneaux
+                    );
+                });
+
+                const ws = XLSX.utils.aoa_to_sheet(programData);
+                XLSX.utils.book_append_sheet(wb, ws, groupe.programme.replace(/\s+/g, '_'));
+            });
+
+            // Ajouter une page "Planning par Atelier"
+            window.groupesGeneres.forEach(groupe => {
+                const ateliers = window.programmesAteliers[groupe.programme];
+                const planningAtelierData = [
+                    [groupe.programme],
+                    ['Planning par Atelier'],
+                    []
+                ];
+
+                // Pour chaque atelier
+                ateliers.forEach(atelier => {
+                    planningAtelierData.push(
+                        [`Atelier: ${atelier}`],
+                        ['Horaire', 'Nom', 'Prénom', 'Classe', 'Vœu satisfait']
+                    );
+
+                    // Trouver tous les créneaux où cet atelier est utilisé
+                    groupe.creneaux.forEach(creneau => {
+                        const planning = genererPlanningAteliers(groupe.programme, creneau.horaire);
+                        const atelierCreneau = planning.find(p => p.atelier === atelier);
+                        if (atelierCreneau) {
+                            // Ajouter les élèves de ce créneau
+                            planningAtelierData.push(
+                                ...creneau.eleves.map(eleve => [
+                                    atelierCreneau.horaire,
+                                    eleve.Nom,
+                                    eleve.Prenom,
+                                    eleve.Classe,
+                                    eleve.voeuSatisfait ? `Vœu ${eleve.voeuSatisfait}` : 'Non satisfait'
+                                ])
+                            );
+                        }
+                    });
+
+                    planningAtelierData.push([]); // Ligne vide entre les ateliers
+                });
+
+                const ws = XLSX.utils.aoa_to_sheet(planningAtelierData);
+                XLSX.utils.book_append_sheet(wb, ws, `${groupe.programme.replace(/\s+/g, '_')}_Ateliers`);
+            });
+
+            XLSX.writeFile(wb, "groupes_programmes_creneaux.xlsx");
+        }
+
+        // Initialisation
+        window.addEventListener('load', chargerAteliers);
+    </script>
+</body>
+</html>

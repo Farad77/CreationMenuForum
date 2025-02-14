@@ -3,150 +3,127 @@
 <head>
     <meta charset="UTF-8">
     <title>Gestionnaire d'Ateliers</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .input-group {
-            margin-bottom: 20px;
-        }
-        input[type="number"] {
-            width: 60px;
-            padding: 5px;
-            margin-right: 10px;
-        }
-        button {
-            padding: 10px 20px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        #ateliersList {
-            margin: 20px 0;
-        }
-        .atelier-item {
-            display: flex;
-            align-items: center;
-            margin: 5px 0;
-            padding: 5px;
-            background-color: #f9f9f9;
-        }
-        .atelier-item button {
-            margin-left: 10px;
-            background-color: #ff4444;
-            padding: 5px 10px;
-        }
-        .button-group {
-            margin: 20px 0;
-            display: flex;
-            gap: 10px;
-        }
-        .button-group button {
-            flex: 1;
-        }
-        .import-export-group {
-            margin: 20px 0;
-            padding: 15px;
-            background-color: #f0f0f0;
-            border-radius: 4px;
-        }
-        .import-export-group h3 {
-            margin-top: 0;
-        }
-        .file-input {
-            margin: 10px 0;
-        }
-        .export-buttons {
-            display: flex;
-            gap: 10px;
-        }
-        .export-buttons button {
-            flex: 1;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Gestionnaire d'Ateliers</h1>
-        
-        <div class="input-group">
-            <label>Atelier n°<span id="atelierNumber">1</span>:</label>
-            <input type="text" id="nomAtelier" placeholder="Nom de l'atelier" style="width: 200px; margin-right: 10px;">
-            <select id="typeAtelier" style="margin-right: 10px;">
-                <option value="">-- Sélectionner un type --</option>
-                <option value="Metier manuel">Métier manuel</option>
-                <option value="Tertiaire">Tertiaire</option>
-                <option value="Formation">Formation</option>
-            </select>
-            <input type="number" id="attractivite" min="1" max="10" placeholder="1-10">
-            <button onclick="ajouterAtelier()">Ajouter</button>
-        </div>
-
-        <div id="ateliersList"></div>
-
-        <div class="import-export-group">
-            <h3>Gestion des ateliers</h3>
-            <div class="export-buttons">
-                <button onclick="exporterAteliers('xlsx')">Exporter ateliers (XLSX)</button>
-                <button onclick="exporterAteliers('csv')">Exporter ateliers (CSV)</button>
-            </div>
-            <div class="file-input">
-                <input type="file" id="importAteliers" accept=".xlsx,.csv" onchange="importerAteliers(event)">
-            </div>
-        </div>
-
-        <button onclick="genererMenus()" id="genererBtn" disabled>Générer les menus</button>
-
-        <div id="menusList"></div>
-
-        <div class="import-export-group" id="exportMenusGroup" style="display: none;">
-            <h3>Export des menus générés</h3>
-            <div class="export-buttons">
-                <button onclick="exporterMenus('xlsx')">Exporter menus (XLSX)</button>
-                <button onclick="exporterMenus('csv')">Exporter menus (CSV)</button>
-            </div>
-        </div>
-    </div>
-
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
     <script>
         let ateliers = [];
         let menusGeneres = [];
-        
-        // Couleurs pour les types d'ateliers (format rgb)
-        const typeColors = {
-            'Metier manuel': 'rgb(255, 183, 77)',    // #FFB74D
-            'Tertiaire': 'rgb(100, 181, 246)',       // #64B5F6
-            'Formation': 'rgb(129, 199, 132)'        // #81C784
-        };
 
-        function getColorForType(type) {
-            return typeColors[type] || 'rgb(0, 0, 0)';  // Noir par défaut si type non trouvé
+        function importerAteliers(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+
+                    // Vérifier et formater les données
+                    ateliers = jsonData.map(row => ({
+                        id: parseInt(row.id),
+                        nom: row.nom,
+                        type: row.type,
+                        attractivite: parseInt(row.attractivite)
+                    }));
+
+                    afficherAteliers();
+                    document.getElementById('genererBtn').disabled = ateliers.length < 5;
+                    document.getElementById('atelierNumber').textContent = ateliers.length + 1;
+                } catch (error) {
+                    alert('Erreur lors de l\'import du fichier : ' + error.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
         }
 
-        function ajouterAtelier() {
-            const attractivite = parseInt(document.getElementById('attractivite').value);
-            if (isNaN(attractivite) || attractivite < 1 || attractivite > 10) {
-                alert('Veuillez entrer une note d\'attractivité entre 1 et 10');
+        function exporterAteliers(format) {
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(ateliers);
+            XLSX.utils.book_append_sheet(wb, ws, "Ateliers");
+
+            if (format === 'xlsx') {
+                XLSX.writeFile(wb, "ateliers.xlsx");
+            } else {
+                const csv = XLSX.utils.sheet_to_csv(ws);
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = "ateliers.csv";
+                link.click();
+            }
+        }
+
+        function exporterMenus(format) {
+            // Vérification des menus générés
+            if (!menusGeneres || !menusGeneres.length) {
+                alert('Aucun programme à exporter');
                 return;
             }
 
+            try {
+                // Préparation des données
+                const wb = XLSX.utils.book_new();
+                let rows = [];
+
+                // En-tête
+                rows.push(['Répartition des Programmes d\'Ateliers']);
+                rows.push([]);  // Ligne vide
+
+                // Données pour chaque menu
+                menusGeneres.forEach((menu, menuIndex) => {
+                    rows.push([`Programme ${menuIndex + 1}`]);
+                    rows.push(['', 'Type', 'Nom de l\'atelier', 'Attractivité']);
+                    
+                    menu.forEach(atelier => {
+                        rows.push([
+                            menuIndex + 1,
+                            atelier.type,
+                            atelier.nom,
+                            atelier.attractivite
+                        ]);
+                    });
+                    
+                    // Lignes vides entre les programmes
+                    rows.push([]);
+                    rows.push([]);
+                });
+
+                // Création de la feuille
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+
+                // Styles
+                ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
+                ws['!cols'] = [
+                    { wch: 8 },   // Indice
+                    { wch: 15 },  // Type
+                    { wch: 40 },  // Nom
+                    { wch: 12 }   // Attractivité
+                ];
+
+                // Ajout de la feuille au workbook
+                XLSX.utils.book_append_sheet(wb, ws, 'Programmes');
+
+                // Export selon le format demandé
+                if (format === 'csv') {
+                    const csv = XLSX.utils.sheet_to_csv(ws);
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    link.download = "programmes.csv";
+                    link.click();
+                } else {
+                    XLSX.writeFile(wb, "programmes.xlsx");
+                }
+            } catch (error) {
+                console.error('Erreur lors de l\'export:', error);
+                alert('Une erreur est survenue lors de l\'export. Veuillez réessayer.');
+            }
+        }
+
+        function ajouterAtelier() {
             const nom = document.getElementById('nomAtelier').value.trim();
             if (!nom) {
                 alert('Veuillez entrer un nom pour l\'atelier');
@@ -159,6 +136,12 @@
                 return;
             }
 
+            const attractivite = parseInt(document.getElementById('attractivite').value);
+            if (isNaN(attractivite) || attractivite < 1 || attractivite > 10) {
+                alert('Veuillez entrer une note d\'attractivité entre 1 et 10');
+                return;
+            }
+
             const atelier = {
                 id: ateliers.length + 1,
                 nom: nom,
@@ -168,12 +151,10 @@
 
             ateliers.push(atelier);
             afficherAteliers();
-            document.getElementById('attractivite').value = '';
             document.getElementById('nomAtelier').value = '';
             document.getElementById('typeAtelier').value = '';
+            document.getElementById('attractivite').value = '';
             document.getElementById('atelierNumber').textContent = ateliers.length + 1;
-
-            // Activer le bouton de génération si on a au moins 5 ateliers
             document.getElementById('genererBtn').disabled = ateliers.length < 5;
         }
 
@@ -202,219 +183,20 @@
             return menu.reduce((sum, atelier) => sum + atelier.attractivite, 0);
         }
 
-        function exporterAteliers(format) {
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.json_to_sheet(ateliers);
-            XLSX.utils.book_append_sheet(wb, ws, "Ateliers");
-
-            if (format === 'xlsx') {
-                XLSX.writeFile(wb, "ateliers.xlsx");
-            } else {
-                const csv = XLSX.utils.sheet_to_csv(ws);
-                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement("a");
-                link.href = URL.createObjectURL(blob);
-                link.download = "ateliers.csv";
-                link.click();
-            }
-        }
-
         function verifierDiversiteTypes(menu) {
             const types = new Set(menu.map(a => a.type));
-            return types.size >= 3; // Idéalement, on veut les 3 types
-        }
-
-        async function importerAteliers(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, {type: 'array'});
-                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                    const jsonData = XLSX.utils.sheet_to_json(firstSheet);
-
-                    // Vérifier et formater les données
-                    ateliers = jsonData.map(row => ({
-                        id: parseInt(row.id),
-                        nom: row.nom,
-                        type: row.type,
-                        attractivite: parseInt(row.attractivite)
-                    }));
-
-                    afficherAteliers();
-                    document.getElementById('genererBtn').disabled = ateliers.length < 5;
-                    document.getElementById('atelierNumber').textContent = ateliers.length + 1;
-                } catch (error) {
-                    alert('Erreur lors de l\'import du fichier : ' + error.message);
-                }
-            };
-            reader.readAsArrayBuffer(file);
-        }
-
-        function exporterMenus(format) {
-            if (!menusGeneres.length) {
-                alert('Aucun menu à exporter');
-                return;
-            }
-
-            if (format === 'csv') {
-                // [...code CSV inchangé...]
-                return;
-            }
-
-            const wb = XLSX.utils.book_new();
-
-            // Feuille principale des menus (inchangée)
-            const menusData = [];
-            menusData.push([{ v: "Répartition des Menus d'Ateliers", t: 's' }]);
-            menusData.push([]);
-
-            menusData.push([
-                "Menu", "Type", "Nom de l'atelier", "Attractivité"
-            ]);
-
-            menusGeneres.forEach((menu, menuIndex) => {
-                menu.forEach((atelier) => {
-                    menusData.push([
-                        menuIndex + 1,
-                        atelier.type,
-                        atelier.nom,
-                        atelier.attractivite
-                    ]);
-                });
-                menusData.push([]);
-            });
-
-            const ws = XLSX.utils.aoa_to_sheet(menusData);
-
-            // Styles (inchangés)
-            const range = XLSX.utils.decode_range(ws['!ref']);
-            const styleCell = { 
-                font: { bold: true },
-                alignment: { horizontal: "center", vertical: "center" },
-                fill: { fgColor: { rgb: "4F81BD" }, patternType: "solid" }
-            };
-
-            ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
-
-            for (let C = range.s.c; C <= range.e.c; ++C) {
-                const cell = XLSX.utils.encode_cell({ r: 2, c: C });
-                if (!ws[cell]) continue;
-                ws[cell].s = styleCell;
-            }
-
-            ws['!cols'] = [
-                { wch: 8 }, { wch: 15 }, { wch: 30 }, { wch: 12 }
-            ];
-
-            // Feuille de statistiques améliorée
-            const statsData = [];
-            statsData.push(['Analyse Statistique des Menus']);
-            statsData.push([]);
-
-            // Section 1: Répartition par type pour chaque menu
-            statsData.push(['Répartition des types par menu']);
-            statsData.push(['Menu', 'Métier manuel', 'Tertiaire', 'Formation', 'Poids Total']);
-
-            const menuStats = menusGeneres.map((menu, index) => {
-                const types = {
-                    'Metier manuel': 0,
-                    'Tertiaire': 0,
-                    'Formation': 0
-                };
-                menu.forEach(atelier => {
-                    types[atelier.type]++;
-                });
-                return [
-                    index + 1,
-                    types['Metier manuel'],
-                    types['Tertiaire'],
-                    types['Formation'],
-                    calculerPoidsTotal(menu)
-                ];
-            });
-
-            statsData.push(...menuStats);
-            statsData.push([]);
-            statsData.push([]);
-
-            // Section 2: Statistiques globales
-            const globalStats = menusGeneres.reduce((stats, menu) => {
-                menu.forEach(atelier => {
-                    stats.totalAteliers++;
-                    stats.types[atelier.type] = (stats.types[atelier.type] || 0) + 1;
-                    stats.poidsTotal += atelier.attractivite;
-                });
-                return stats;
-            }, { totalAteliers: 0, types: {}, poidsTotal: 0 });
-
-            statsData.push(['Statistiques Globales']);
-            statsData.push(['Métrique', 'Valeur']);
-            statsData.push(['Nombre total d\'ateliers', globalStats.totalAteliers]);
-            statsData.push(['Nombre de menus', menusGeneres.length]);
-            statsData.push(['Poids total', globalStats.poidsTotal]);
-            statsData.push(['Poids moyen par menu', globalStats.poidsTotal / menusGeneres.length]);
-            statsData.push([]);
-
-            // Section 3: Répartition globale des types
-            statsData.push(['Répartition globale des types']);
-            statsData.push(['Type', 'Nombre d\'ateliers', 'Pourcentage']);
-            Object.entries(globalStats.types).forEach(([type, count]) => {
-                statsData.push([
-                    type,
-                    count,
-                    Math.round((count / globalStats.totalAteliers) * 100) + '%'
-                ]);
-            });
-
-            // Création de la feuille de statistiques
-            const wsStats = XLSX.utils.aoa_to_sheet(statsData);
-
-            // Styles pour la feuille de statistiques
-            wsStats['!cols'] = [
-                { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
-            ];
-
-            // Ajout des graphiques (commenté car non supporté directement par SheetJS)
-            /* 
-            Note: XLSX-Populate ou d'autres bibliothèques seraient nécessaires
-            pour ajouter des graphiques natifs Excel. À la place, nous fournissons
-            les données formatées de manière à faciliter la création manuelle
-            de graphiques dans Excel.
-            */
-
-            // Instructions pour les graphiques
-            statsData.push([]);
-            statsData.push(['Instructions pour les graphiques:']);
-            statsData.push(['1. Pour créer un diagramme circulaire de la répartition des types:']);
-            statsData.push(['   - Sélectionnez les données de la section "Répartition globale des types"']);
-            statsData.push(['   - Insérez > Graphique > Secteurs']);
-            statsData.push([]);
-            statsData.push(['2. Pour créer un graphique en barres de la répartition par menu:']);
-            statsData.push(['   - Sélectionnez les données de la section "Répartition des types par menu"']);
-            statsData.push(['   - Insérez > Graphique > Histogramme groupé']);
-
-            // Ajout des feuilles au workbook
-            XLSX.utils.book_append_sheet(wb, ws, "Menus Détaillés");
-            XLSX.utils.book_append_sheet(wb, wsStats, "Statistiques et Graphiques");
-
-            // Export du fichier
-            XLSX.writeFile(wb, "menus_detailles.xlsx");
+            return types.size >= 3;
         }
 
         function evaluerMenu(menu, poidsMoyenIdeal) {
             const diversite = verifierDiversiteTypes(menu) ? 1 : 0;
             const ecartPoids = Math.abs(calculerPoidsTotal(menu) - poidsMoyenIdeal);
-            // La diversité des types est prioritaire sur l'équilibre des poids
             return diversite * 1000 - ecartPoids;
         }
 
         function genererMenus() {
             if (ateliers.length < 5) {
-                alert('Il faut au moins 5 ateliers pour générer des menus');
+                alert('Il faut au moins 5 ateliers pour générer des programmes');
                 return;
             }
 
@@ -461,12 +243,14 @@
                 }
             }
 
-            // Stocker les menus générés pour l'export
+            // Stocker les menus générés
             menusGeneres = menus;
-            
+
             // Afficher les menus générés
             const menusList = document.getElementById('menusList');
-            menusList.innerHTML = '<h3>Menus générés:</h3>';
+            menusList.innerHTML = '<h3>Programmes générés:</h3><div class="menu-grid"></div>';
+            const menuGrid = menusList.querySelector('.menu-grid');
+
             menus.forEach((menu, index) => {
                 const poidsTotal = calculerPoidsTotal(menu);
                 const types = menu.reduce((acc, atelier) => {
@@ -474,76 +258,65 @@
                     return acc;
                 }, {});
 
-                const menuContainer = document.createElement('div');
-                menuContainer.style.display = 'flex';
-                menuContainer.style.gap = '20px';
-                menuContainer.style.marginBottom = '20px';
+                const card = document.createElement('div');
+                card.className = 'menu-card';
 
-                const menuInfo = document.createElement('div');
-                menuInfo.className = 'menu';
-                menuInfo.style.flex = '1';
-                menuInfo.innerHTML = `
-                    <strong>Menu ${index + 1}</strong> (Poids total: ${poidsTotal}, Nombre de types différents: ${Object.keys(types).length})<br>
-                    ${menu.map(a => `Atelier ${a.id} - ${a.nom} - ${a.type} (${a.attractivite})`).join('<br>')}
+                const header = document.createElement('div');
+                header.className = 'menu-header';
+                header.innerHTML = `Programme ${index + 1}`;
+
+                const stats = document.createElement('div');
+                stats.className = 'menu-stats';
+                stats.innerHTML = `
+                    <div class="menu-stat">
+                        <div class="menu-stat-label">Poids total</div>
+                        <div class="menu-stat-value">${poidsTotal}</div>
+                    </div>
+                    <div class="menu-stat">
+                        <div class="menu-stat-label">Types différents</div>
+                        <div class="menu-stat-value">${Object.keys(types).length}</div>
+                    </div>
                 `;
 
-                const graphContainer = document.createElement('div');
-                graphContainer.style.width = '200px';
-                graphContainer.style.height = '200px';
+                const ateliersList = document.createElement('div');
+                ateliersList.className = 'menu-content';
+                ateliersList.innerHTML = `
+                    <ul class="atelier-list">
+                        ${menu.map(a => `
+                            <li class="atelier-item">
+                                <div class="atelier-info">
+                                    <div>${a.nom}</div>
+                                    <div class="atelier-type">${a.type}</div>
+                                </div>
+                                <div class="atelier-score">${a.attractivite}</div>
+                            </li>
+                        `).join('')}
+                    </ul>
+                `;
+
+                const chartContainer = document.createElement('div');
+                chartContainer.className = 'chart-container';
                 const canvas = document.createElement('canvas');
-                graphContainer.appendChild(canvas);
+                chartContainer.appendChild(canvas);
 
-                menuContainer.appendChild(menuInfo);
-                menuContainer.appendChild(graphContainer);
-                menusList.appendChild(menuContainer);
-
-                // Préparation des données pour le graphique Chart.js
-                const typeLabels = Object.keys(types);
-                const typeValues = Object.values(types);
-                const typeBackgroundColors = typeLabels.map(type => getColorForType(type));
-
-                // Configuration du style des tooltips et de la légende
-                Chart.defaults.font.family = 'Arial, sans-serif';
-                Chart.defaults.color = '#333';
-
-                // Assurons-nous que les types correspondent exactement
-                const dataset = {
-                    data: [],
-                    backgroundColor: [],
-                    borderColor: Array(typeValues.length).fill('#fff'),
-                    borderWidth: 2
-                };
-
-                // Construisons les données dans l'ordre
-                typeLabels.forEach((type, index) => {
-                    dataset.data.push(typeValues[index]);
-                    switch(type) {
-                        case 'Metier manuel':
-                            dataset.backgroundColor.push('rgb(255, 183, 77)');
-                            break;
-                        case 'Tertiaire':
-                            dataset.backgroundColor.push('rgb(100, 181, 246)');
-                            break;
-                        case 'Formation':
-                            dataset.backgroundColor.push('rgb(129, 199, 132)');
-                            break;
-                        default:
-                            dataset.backgroundColor.push('rgb(153, 153, 153)');
-                    }
-                });
+                card.appendChild(header);
+                card.appendChild(stats);
+                card.appendChild(ateliersList);
+                card.appendChild(chartContainer);
+                menuGrid.appendChild(card);
 
                 new Chart(canvas, {
                     type: 'pie',
                     data: {
-                        labels: typeLabels,
+                        labels: Object.keys(types),
                         datasets: [{
-                            data: typeValues,
+                            data: Object.values(types),
                             backgroundColor: [
-                                '#FF6B6B',  // Rouge vif
-                                '#4ECDC4',  // Turquoise
-                                '#45B7D1',  // Bleu clair
-                                '#96CEB4',  // Vert pastel
-                                '#FFEEAD',  // Jaune pastel
+                                '#FF6B6B',
+                                '#4ECDC4',
+                                '#45B7D1',
+                                '#96CEB4',
+                                '#FFEEAD'
                             ],
                             borderColor: '#FFFFFF',
                             borderWidth: 2
@@ -557,26 +330,10 @@
                                 position: 'bottom',
                                 labels: {
                                     font: {
-                                        size: 11
+                                        size: 10
                                     },
-                                    usePointStyle: true,
-                                    padding: 15
-                                }
-                            },
-                            tooltip: {
-                                backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                                titleColor: '#333',
-                                bodyColor: '#333',
-                                borderColor: '#ddd',
-                                borderWidth: 1,
-                                padding: 10,
-                                callbacks: {
-                                    label: function(context) {
-                                        const value = context.raw;
-                                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                        const percentage = Math.round((value * 100) / total);
-                                        return `${context.label}: ${value} atelier${value > 1 ? 's' : ''} (${percentage}%)`;
-                                    }
+                                    boxWidth: 10,
+                                    padding: 5
                                 }
                             }
                         }
@@ -588,5 +345,190 @@
             document.getElementById('exportMenusGroup').style.display = 'block';
         }
     </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        input[type="number"] {
+            width: 60px;
+            padding: 5px;
+            margin-right: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #ateliersList {
+            margin: 20px 0;
+        }
+        .atelier-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+            padding: 5px;
+            background-color: #f9f9f9;
+        }
+        .atelier-item button {
+            margin-left: 10px;
+            background-color: #ff4444;
+            padding: 5px 10px;
+        }
+        .import-export-group {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+        }
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        .export-buttons button {
+            flex: 1;
+        }
+        .file-input {
+            margin: 10px 0;
+        }
+        select {
+            padding: 5px;
+            margin-right: 10px;
+            width: 200px;
+        }
+        input[type="text"] {
+            padding: 5px;
+            margin-right: 10px;
+            width: 200px;
+        }
+        .menu-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .menu-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+            height: 600px;  /* Augmentation de la hauteur minimale */
+        }
+        .menu-header {
+            background: #4472C4;
+            color: white;
+            padding: 15px;
+            font-weight: bold;
+        }
+        .menu-content {
+            padding: 15px;
+        }
+        .menu-stats {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 10px;
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .menu-stat {
+            flex: 1;
+            text-align: center;
+        }
+        .menu-stat-label {
+            font-size: 0.8em;
+            color: #666;
+        }
+        .menu-stat-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+        }
+        .atelier-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .atelier-info {
+            flex: 1;
+        }
+        .atelier-type {
+            font-size: 0.8em;
+            color: #666;
+        }
+        .atelier-score {
+            background: #e8eaf6;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .chart-container {
+            margin-top: 15px;
+            height: 200px;
+            display: flex;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gestionnaire d'Ateliers</h1>
+        
+        <div class="input-group">
+            <label>Atelier n°<span id="atelierNumber">1</span>:</label>
+            <input type="text" id="nomAtelier" placeholder="Nom de l'atelier">
+            <select id="typeAtelier">
+                <option value="">-- Sélectionner un type --</option>
+                <option value="Metier manuel">Métier manuel</option>
+                <option value="Tertiaire">Tertiaire</option>
+                <option value="Formation">Formation</option>
+            </select>
+            <input type="number" id="attractivite" min="1" max="10" placeholder="1-10">
+            <button onclick="ajouterAtelier()">Ajouter</button>
+        </div>
+
+        <div id="ateliersList"></div>
+
+        <div class="import-export-group">
+            <h3>Gestion des ateliers</h3>
+            <div class="export-buttons">
+                <button onclick="exporterAteliers('xlsx')">Exporter ateliers (XLSX)</button>
+                <button onclick="exporterAteliers('csv')">Exporter ateliers (CSV)</button>
+            </div>
+            <div class="file-input">
+                <input type="file" id="importAteliers" accept=".xlsx,.csv" onchange="importerAteliers(event)">
+            </div>
+        </div>
+
+        <button onclick="genererMenus()" id="genererBtn" disabled>Générer les programmes</button>
+
+        <div id="menusList"></div>
+
+        <div class="import-export-group" id="exportMenusGroup" style="display: none;">
+            <h3>Export des programmes générés</h3>
+            <div class="export-buttons">
+                <button onclick="exporterMenus('xlsx')">Exporter programmes (XLSX)</button>
+                <button onclick="exporterMenus('csv')">Exporter programmes (CSV)</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
